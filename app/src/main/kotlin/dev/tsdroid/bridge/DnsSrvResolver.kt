@@ -95,20 +95,21 @@ object DnsSrvResolver {
         val response = ByteArray(1024)
 
         for (server in dnsServers) {
-            DatagramSocket().use { socket ->
+            val socket = DatagramSocket()
+            try {
                 socket.soTimeout = DNS_TIMEOUT_MS
-                try {
-                    socket.send(DatagramPacket(query, query.size, server, 53))
-                    val packet = DatagramPacket(response, response.size)
-                    socket.receive(packet)
-                    return parseDnsResponse(packet.data, packet.length, query.size)
-                } catch (e: SocketTimeoutException) {
-                    // Try next DNS server
-                    continue
-                } catch (e: Exception) {
-                    Log.d(TAG, "DNS query to $server failed: ${e.message}")
-                    continue
-                }
+                socket.send(DatagramPacket(query, query.size, server, 53))
+                val packet = DatagramPacket(response, response.size)
+                socket.receive(packet)
+                return parseDnsResponse(packet.data, packet.length, query.size)
+            } catch (e: SocketTimeoutException) {
+                // Try next DNS server
+                continue
+            } catch (e: Exception) {
+                Log.d(TAG, "DNS query to $server failed: ${e.message}")
+                continue
+            } finally {
+                socket.close()
             }
         }
         return emptyList()
