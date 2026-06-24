@@ -111,6 +111,7 @@
     <string name="error_address_nickname_required">地址和昵称为必填项</string>
     <string name="connection_failed">连接失败</string>
     <string name="browse_failed">浏览频道失败</string>
+    <string name="connection_timeout">连接超时，请检查服务器地址和网络</string>
 
     <!-- AboutScreen -->
     <string name="about_software">关于软件 / About</string>

@@ -1,0 +1,139 @@
+{
+  "symbols": {
+    "app/src/main/kotlin/dev/tsdroid/data/ServerBookmark.kt": {
+      "ipo_ts": 1782313335392,
+      "edit_count": 2,
+      "last_lines": 11,
+      "last_ts": 1782313459738,
+      "delisted": false,
+      "last_source": "onEdit",
+      "last_content_hash": "9de556df"
+    },
+    "app/src/main/kotlin/dev/tsdroid/data/BookmarkStore.kt": {
+      "ipo_ts": 1782313360967,
+      "edit_count": 2,
+      "last_lines": 130,
+      "last_ts": 1782313459780,
+      "delisted": false,
+      "last_source": "onEdit",
+      "last_content_hash": "44f6ec72"
+    },
+    "app/src/main/kotlin/dev/tsdroid/bridge/TsClient.kt": {
+      "ipo_ts": 1782313459909,
+      "edit_count": 3,
+      "last_lines": 441,
+      "last_ts": 1782314141513,
+      "delisted": false,
+      "last_source": "onEdit",
+      "last_content_hash": "77c514d8"
+    },
+    "app/src/main/kotlin/dev/tsdroid/viewmodel/ConnectionViewModel.kt": {
+      "ipo_ts": 1782313962215,
+      "edit_count": 5,
+      "last_lines": 395,
+      "last_ts": 1782314602078,
+      "delisted": false,
+      "last_source": "onEdit",
+      "last_content_hash": "b3794707"
+    },
+    ".gradle/buildOutputCleanup/cache.properties": {
+      "ipo_ts": 1782314450455,
+      "edit_count": 2,
+      "last_lines": 2,
+      "last_ts": 1782314550042,
+      "delisted": false,
+      "last_source": "onEdit",
+      "last_content_hash": "f203ba05"
+    },
+    ".gradle/8.14.2/fileChanges/last-build.bin": {
+      "ipo_ts": 1782314460208,
+      "edit_count": 1,
+      "last_lines": 1,
+      "last_ts": 1782314460208,
+      "delisted": false,
+      "last_source": "onEdit",
+      "last_content_hash": "0"
+    },
+    ".gradle/8.14.2/fileHashes/fileHashes.lock": {
+      "ipo_ts": 1782314460211,
+      "edit_count": 2,
+      "last_lines": 1,
+      "last_ts": 1782314551709,
+      "delisted": false,
+      "last_source": "onEdit",
+      "last_content_hash": "652ffde5"
+    },
+    ".gradle/buildOutputCleanup/buildOutputCleanup.lock": {
+      "ipo_ts": 1782314460214,
+      "edit_count": 2,
+      "last_lines": 1,
+      "last_ts": 1782314551712,
+      "delisted": false,
+      "last_source": "onEdit",
+      "last_content_hash": "93889e09"
+    },
+    ".gradle/8.14.2/checksums/checksums.lock": {
+      "ipo_ts": 1782314595592,
+      "edit_count": 1,
+      "last_lines": 1,
+      "last_ts": 1782314595592,
+      "delisted": false,
+      "last_source": "onEdit",
+      "last_content_hash": "9cfbde44"
+    },
+    "README.md": {
+      "ipo_ts": 1782314602074,
+      "edit_count": 1,
+      "last_lines": 42,
+      "last_ts": 1782314602074,
+      "delisted": false,
+      "last_source": "onEdit",
+      "last_content_hash": "b4a06b57"
+    },
+    "app/src/main/res/values-en/strings.xml": {
+      "ipo_ts": 1782314602081,
+      "edit_count": 1,
+      "last_lines": 90,
+      "last_ts": 1782314602081,
+      "delisted": false,
+      "last_source": "onEdit",
+      "last_content_hash": "f51d1415"
+    },
+    "gradle/wrapper/gradle-wrapper.properties": {
+      "ipo_ts": 1782314602369,
+      "edit_count": 1,
+      "last_lines": 7,
+      "last_ts": 1782314602369,
+      "delisted": false,
+      "last_source": "onEdit",
+      "last_content_hash": "2734f999"
+    },
+    "app/src/main/res/values-zh-rCN/strings.xml": {
+      "ipo_ts": 1782314602542,
+      "edit_count": 1,
+      "last_lines": 130,
+      "last_ts": 1782314602542,
+      "delisted": false,
+      "last_source": "onEdit",
+      "last_content_hash": "a6e564b9"
+    },
+    "app/src/main/res/values/strings.xml": {
+      "ipo_ts": 1782314602545,
+      "edit_count": 1,
+      "last_lines": 131,
+      "last_ts": 1782314602545,
+      "delisted": false,
+      "last_source": "onEdit",
+      "last_content_hash": "60931dbf"
+    },
+    "app/build.gradle.kts": {
+      "ipo_ts": 1782314602559,
+      "edit_count": 3,
+      "last_lines": 99,
+      "last_ts": 1782314694095,
+      "delisted": false,
+      "last_source": "onEdit",
+      "last_content_hash": "6e0959f7"
+    }
+  }
+}

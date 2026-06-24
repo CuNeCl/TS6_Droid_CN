@@ -71,6 +71,7 @@
     <string name="error_address_nickname_required">Address and nickname are required</string>
     <string name="connection_failed">Connection failed</string>
     <string name="browse_failed">Failed to browse channels</string>
+    <string name="connection_timeout">Connection timed out, check the server address and network</string>
 
     <!-- AboutScreen -->
     <string name="about_software">About / 关于软件</string>

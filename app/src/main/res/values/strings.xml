@@ -112,6 +112,7 @@
     <string name="error_address_nickname_required">L\'adresse et le pseudo sont requis</string>
     <string name="connection_failed">Échec de la connexion</string>
     <string name="browse_failed">Échec du parcours des channels</string>
+    <string name="connection_timeout">Délai de connexion dépassé, vérifiez l\'adresse et le réseau</string>
 
     <!-- AboutScreen -->
     <string name="about_software">À propos / About</string>

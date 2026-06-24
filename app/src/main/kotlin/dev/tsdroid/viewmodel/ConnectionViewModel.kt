@@ -24,14 +24,18 @@ import dev.tslib.Client
 import dev.tslib.ConnectionState
 import dev.tslib.Identity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 class ConnectionViewModel(application: Application) : AndroidViewModel(application) {
@@ -141,7 +145,7 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
                 kotlinx.coroutines.delay(100)
                 attempts++
             }
-            
+
             val service = TsConnectionService.instance
             if (service == null) {
                 _connectionState.value = ConnectionState.DISCONNECTED
@@ -152,17 +156,53 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
             try {
                 val identity = getOrCreateIdentity()
                 val pw = password.value.trim().takeIf { it.isNotEmpty() }
-                val ch = channel.value.trim().takeIf { it.isNotEmpty() }
                 service.connect(addr, identity, nick, pw)
-                // Note: The original code passed 'ch' to connect, but TsConnectionService.connect doesn't take a channel parameter.
-                // If channel joining is needed, it should be handled after connection.
-                
-                // Observe the actual connection state from the service
-                service.tsClient.state.collect { state ->
+
+                // Observe the actual connection state from the service.
+                // service.connect() is fire-and-forget (launches its own coroutine),
+                // so we must watch the state flow to detect success or failure.
+                //
+                // BUG FIX: The previous code used `collect { }` which never terminates
+                // and never set `_error` when connection failed — causing "mysterious
+                // connection failures" with no error message shown to the user.
+                //
+                // Now we use a CompletableDeferred to wait for a terminal state
+                // (CONNECTED or DISCONNECTED-after-CONNECTING) and properly
+                // propagate the error to the UI.
+                val connectionResult = CompletableDeferred<Boolean>()
+                var previousState = ConnectionState.DISCONNECTED
+
+                val collectorJob = service.tsClient.state.onEach { state ->
                     _connectionState.value = state
-                    if (state == ConnectionState.CONNECTED) {
-                        onConnected()
+                    when {
+                        state == ConnectionState.CONNECTED -> {
+                            connectionResult.complete(true)
+                        }
+                        state == ConnectionState.DISCONNECTED &&
+                            previousState == ConnectionState.CONNECTING -> {
+                            // Connection was attempting and then dropped → failure
+                            connectionResult.complete(false)
+                        }
                     }
+                    previousState = state
+                }.launchIn(viewModelScope)
+
+                try {
+                    val success = withTimeoutOrNull(30_000) { connectionResult.await() }
+                    collectorJob.cancel()
+                    if (success == true) {
+                        onConnected()
+                    } else if (success == null) {
+                        // Timeout
+                        _connectionState.value = ConnectionState.DISCONNECTED
+                        _error.value = getApplication<Application>()
+                            .getString(R.string.connection_timeout)
+                    } else {
+                        _error.value = getApplication<Application>()
+                            .getString(R.string.connection_failed)
+                    }
+                } finally {
+                    collectorJob.cancel()
                 }
             } catch (e: Exception) {
                 _connectionState.value = ConnectionState.DISCONNECTED
@@ -265,7 +305,9 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
                 val channels = withContext(Dispatchers.IO) {
                     val identity = getOrCreateIdentity()
                     val pw = password.value.trim().takeIf { it.isNotEmpty() }
-                    val client = Client(addr, identity, nick, pw, null)
+                    // Resolve SRV record if no port is specified
+                    val resolvedAddr = dev.tsdroid.bridge.DnsSrvResolver.resolve(addr)
+                    val client = Client(resolvedAddr, identity, nick, pw, null)
                     try {
                         client.waitConnected()
                         // Pump events until channels are available (or timeout)

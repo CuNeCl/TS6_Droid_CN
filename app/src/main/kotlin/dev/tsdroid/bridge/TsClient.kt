@@ -93,14 +93,24 @@ class TsClient {
                 // Phase 1: Pure physical reset of old client tokens
                 stopEventLoop()
                 disconnect()
-                
+
                 // Phase 2: Start new handshake after a safe 300ms propagation delay
                 delay(300)
-                
-                serverAddress = address
-                val c = Client(address, identity, nickname, password, channel)
-                client = c
+
+                // Set CONNECTING state early so that any subsequent failure
+                // (e.g. SRV resolution, DNS, network) is detectable by state
+                // observers as a CONNECTING → DISCONNECTED transition.
                 _state.value = ConnectionState.CONNECTING
+
+                // Resolve SRV record if no port is specified in the address
+                val resolvedAddress = DnsSrvResolver.resolve(address)
+                if (resolvedAddress != address) {
+                    Log.i(TAG, "SRV resolved: $address → $resolvedAddress")
+                }
+
+                serverAddress = resolvedAddress
+                val c = Client(resolvedAddress, identity, nickname, password, channel)
+                client = c
                 c.waitConnected()
                 _state.value = ConnectionState.CONNECTED
                 // Log immediately after waitConnected
@@ -113,26 +123,41 @@ class TsClient {
                     }
                 }
                 refreshState()
-            } catch (e: Throwable) {
-                Log.e("TS6_CRASH_PREVENTION", "Aggressively blocking AppCustomException", e)
+            } catch (e: CancellationException) {
+                // Must re-throw CancellationException to preserve coroutine cancellation semantics
                 _state.value = ConnectionState.DISCONNECTED
-                _commandErrors.tryEmit("服务器连接 busy，正在排队重试...")
-                
-                // CRITICAL FIX FOR CRASH: If waitConnected fails (e.g. server rejects connection because of swift reconnect), 
-                // the client pointer is left in a broken state. 
+                cleanupFailedClient()
+                throw e
+            } catch (e: Throwable) {
+                Log.e("TS6_CRASH_PREVENTION", "Connection failed", e)
+                _state.value = ConnectionState.DISCONNECTED
+                // Emit the real error message instead of a generic "busy" message
+                val errorMsg = e.message ?: "Connection failed"
+                _commandErrors.tryEmit(errorMsg)
+
+                // CRITICAL FIX FOR CRASH: If waitConnected fails (e.g. server rejects connection because of swift reconnect),
+                // the client pointer is left in a broken state.
                 // Discard it safely without trying to send disconnect packets or flush network events (which causes SIGSEGV).
-                val failedClient = client
-                client = null
-                if (failedClient != null) {
-                    try {
-                        failedClient.close() // Safe memory free instead of .disconnect()
-                    } catch (_: Exception) {}
-                }
-                
+                cleanupFailedClient()
+
                 // In order to properly stop TsConnectionService from proceeding to start audioBridge/eventLoop
                 // and crashing the app in subsequent steps, we MUST throw an exception back to the caller.
                 throw Exception("Connection failed: ${e.message ?: "Server busy or rejected"}", e)
             }
+        }
+    }
+
+    /**
+     * Safely discard a failed client without sending disconnect packets
+     * or flushing network events (which can cause SIGSEGV).
+     */
+    private fun cleanupFailedClient() {
+        val failedClient = client
+        client = null
+        if (failedClient != null) {
+            try {
+                failedClient.close()
+            } catch (_: Exception) {}
         }
     }
 
