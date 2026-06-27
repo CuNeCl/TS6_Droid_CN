@@ -27,8 +27,6 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import dev.tsdroid.data.SettingsStore
 import dev.tsdroid.han.R
-import dev.tsdroid.ui.component.SettingsCacheSizeHelper
-import dev.tsdroid.ui.component.WallpaperCacheManager
 import kotlinx.coroutines.launch
 
 @Composable
@@ -43,7 +41,6 @@ fun SettingsPage(
     val showLinkThumbnails by settingsStore.showLinkThumbnails.collectAsStateWithLifecycle(initialValue = false)
     val autoLoadImages by settingsStore.autoLoadImages.collectAsStateWithLifecycle(initialValue = true)
     val enableFloatingWindow by settingsStore.enableFloatingWindow.collectAsStateWithLifecycle(initialValue = false)
-    val animeBackground by settingsStore.animeBackground.collectAsStateWithLifecycle(initialValue = true)
     val noiseSuppression by settingsStore.noiseSuppression.collectAsStateWithLifecycle(initialValue = true)
     val audioGain by settingsStore.audioGain.collectAsStateWithLifecycle(initialValue = 1.0f)
 
@@ -205,179 +202,6 @@ fun SettingsPage(
                 checked = enableFloatingWindow,
                 onCheckedChange = { scope.launch { settingsStore.setEnableFloatingWindow(it) } },
             )
-        }
-
-        // Anime background
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.anime_background),
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.weight(1f),
-            )
-            Switch(
-                checked = animeBackground,
-                onCheckedChange = { scope.launch { settingsStore.setAnimeBackground(it) } },
-            )
-        }
-
-        // Wallpaper cache settings (only when anime background enabled)
-        if (animeBackground) {
-            val cacheSizeMB = remember { mutableFloatStateOf(WallpaperCacheManager.getCacheSizeMB()) }
-            val cacheCount = remember { mutableIntStateOf(WallpaperCacheManager.getCachedFilesCount()) }
-            val maxSize = remember { mutableLongStateOf(SettingsCacheSizeHelper.getMaxCacheSize(context)) }
-            var showCacheViewer by remember { mutableStateOf(false) }
-            var showClearConfirm by remember { mutableStateOf(false) }
-
-            // Clear cache confirmation dialog
-            if (showClearConfirm) {
-                AlertDialog(
-                    onDismissRequest = { showClearConfirm = false },
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    title = { Text(stringResource(R.string.wallpaper_clear_cache)) },
-                    text = { Text(stringResource(R.string.wallpaper_clear_cache_confirm)) },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            WallpaperCacheManager.clearCache()
-                            cacheSizeMB.floatValue = 0f
-                            cacheCount.intValue = 0
-                            showClearConfirm = false
-                        }) {
-                            Text(stringResource(R.string.confirm), color = MaterialTheme.colorScheme.error)
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showClearConfirm = false }) {
-                            Text(stringResource(R.string.cancel))
-                        }
-                    },
-                )
-            }
-
-            // Cache viewer dialog
-            if (showCacheViewer) {
-                val cachedFiles = remember { mutableStateListOf(*WallpaperCacheManager.getCachedFiles().toTypedArray()) }
-                AlertDialog(
-                    onDismissRequest = { showCacheViewer = false },
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    title = {
-                        Text("${stringResource(R.string.wallpaper_view_cache)} (${cachedFiles.size})")
-                    },
-                    text = {
-                        if (cachedFiles.isEmpty()) {
-                            Text(stringResource(R.string.wallpaper_cache_empty))
-                        } else {
-                            LazyVerticalGrid(
-                                columns = GridCells.Fixed(3),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                items(cachedFiles.size, key = { cachedFiles[it].name }) { index ->
-                                    val file = cachedFiles[index]
-                                    Box(
-                                        modifier = Modifier
-                                            .aspectRatio(1f)
-                                            .clip(MaterialTheme.shapes.medium)
-                                            .clickable {
-                                                WallpaperCacheManager.deleteFile(file)
-                                                cachedFiles.removeAt(index)
-                                                cacheSizeMB.floatValue = WallpaperCacheManager.getCacheSizeMB()
-                                                cacheCount.intValue = WallpaperCacheManager.getCachedFilesCount()
-                                            },
-                                    ) {
-                                        AsyncImage(
-                                            model = file,
-                                            contentDescription = null,
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier.fillMaxSize(),
-                                        )
-                                        Icon(
-                                            Icons.Default.Close,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier
-                                                .align(Alignment.TopEnd)
-                                                .padding(4.dp)
-                                                .size(16.dp)
-                                                .background(
-                                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
-                                                    CircleShape
-                                                )
-                                                .padding(2.dp),
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    confirmButton = {
-                        TextButton(onClick = { showCacheViewer = false }) {
-                            Text(stringResource(R.string.close))
-                        }
-                    },
-                )
-            }
-
-            Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                Text(
-                    text = stringResource(R.string.wallpaper_cache_size, String.format("%.1f", cacheSizeMB.floatValue), cacheCount.intValue),
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = stringResource(R.string.wallpaper_max_cache, maxSize.longValue),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Slider(
-                    value = maxSize.longValue.toFloat(),
-                    onValueChange = { v ->
-                        maxSize.longValue = v.toLong()
-                    },
-                    onValueChangeFinished = {
-                        SettingsCacheSizeHelper.setMaxCacheSize(context, maxSize.longValue)
-                    },
-                    valueRange = 10f..500f,
-                    steps = 48,
-                )
-            }
-
-            // View cache
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showCacheViewer = true }
-                    .padding(vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.wallpaper_view_cache),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = "${cacheCount.intValue} ${stringResource(R.string.wallpaper_cache_images)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            // Clear cache
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showClearConfirm = true }
-                    .padding(vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.wallpaper_clear_cache),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
         }
 
         // Noise suppression
