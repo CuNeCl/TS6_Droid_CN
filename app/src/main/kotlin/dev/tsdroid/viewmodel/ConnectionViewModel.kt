@@ -28,18 +28,14 @@ import dev.tslib.ConnectionState
 import dev.tslib.Identity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 class ConnectionViewModel(application: Application) : AndroidViewModel(application) {
@@ -178,7 +174,6 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
                     Log.w(TAG, "Too many clones for saved identity; retrying with a temporary identity")
                     connectionFailure = service.connect(addr, getCloneBypassIdentity(), nick, pw)
                 }
-                }
 
                 if (connectionFailure == null) {
                     _connectionState.value = ConnectionState.CONNECTED
@@ -302,44 +297,46 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
                 val channels = withContext(Dispatchers.IO) {
                     val identity = getOrCreateIdentity()
                     val pw = password.value.trim().takeIf { it.isNotEmpty() }
-                    // Resolve SRV record if no port is specified
-                    val resolvedAddr = dev.tsdroid.bridge.DnsSrvResolver.resolve(addr)
                     var lastFailure: Throwable? = null
 
                     for (attempt in 0 until MAX_NICKNAME_COLLISION_ATTEMPTS) {
-                        val candidateNickname = dev.tsdroid.bridge.nicknameWithCollisionSuffix(nick, attempt)
+                        val candidateNick = nicknameWithCollisionSuffix(nick, attempt)
                         var client: Client? = null
                         try {
                             try {
-                                identity.setNickname(candidateNickname)
+                                identity.setNickname(candidateNick)
                             } catch (e: Throwable) {
                                 if (e is CancellationException) throw e
-                                Log.w(TAG, "Failed to update identity nickname before connect", e)
+                                Log.w(TAG, "Failed to update identity nickname before browsing", e)
                             }
-                            client = Client(resolvedAddr, identity, candidateNickname, pw, null)
-                            client.waitConnected()
-                            val users = client.users
-                            if (users != null && channels != null) break
-                            if (!dev.tsdroid.bridge.hasNicknameCollision(users, client.clientId, candidateNickname)) {
-                                break
+                            val c = Client(addr, identity, candidateNick, pw, null)
+                            client = c
+                            c.waitConnected()
+                            // Pump events until channels are available (or timeout)
+                            val deadline = System.currentTimeMillis() + 5000
+                            while (System.currentTimeMillis() < deadline) {
+                                c.processEvents()
+                                val raw = c.channels
+                                if (raw != null && raw.isNotEmpty()) break
+                                Thread.sleep(20)
                             }
-                            Log.w(TAG, "Nickname collision on attempt $attempt, retrying")
+
+                            if (hasNicknameCollision(c.users, c.clientId, candidateNick)) {
+                                lastFailure = IllegalStateException("Nickname already in use: $candidateNick")
+                                disconnectAndClose(c)
+                                client = null
+                                continue
+                            }
+
+                            val ch = c.channels?.filterNotNull() ?: emptyList()
+                            disconnectAndClose(c)
+                            client = null
+                            return@withContext ch
                         } catch (e: Throwable) {
                             if (e is CancellationException) throw e
                             lastFailure = e
-                            if (!dev.tsdroid.bridge.isNicknameCollisionFailure(e)) throw e
-                            Log.w(TAG, "Nickname collision failure on attempt $attempt", e)
                         } finally {
-                            if (client != null) {
-                                if (dev.tsdroid.bridge.hasNicknameCollision(
-                                        client.users, client.clientId, candidateNickname)) {
-                                    dev.tsdroid.bridge.destroyClient(client, "nickname collision in channel list")
-                                } else {
-                                    dev.tsdroid.bridge.closeClient(client, "channel list attempt")
-                                }
-                            }
-                        }
-                    }
+                            client?.let { closeQuietly(it) }
                         }
                     }
 
