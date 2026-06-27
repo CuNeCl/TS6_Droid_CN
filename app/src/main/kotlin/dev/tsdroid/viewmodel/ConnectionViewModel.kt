@@ -14,6 +14,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import dev.tsdroid.bridge.MAX_NICKNAME_COLLISION_ATTEMPTS
+import dev.tsdroid.bridge.hasNicknameCollision
+import dev.tsdroid.bridge.nicknameWithCollisionSuffix
 import dev.tsdroid.han.R
 import dev.tsdroid.data.BookmarkStore
 import dev.tsdroid.data.ServerBookmark
@@ -24,6 +27,7 @@ import dev.tslib.Client
 import dev.tslib.ConnectionState
 import dev.tslib.Identity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -105,12 +109,22 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
     val error: StateFlow<String?> = _error.asStateFlow()
 
     private var serviceConnection: ServiceConnection? = null
+    private var connectJob: kotlinx.coroutines.Job? = null
+    private var cloneBypassIdentity: Identity? = null
 
     fun connect(onConnected: () -> Unit) {
         val addr = address.value.trim()
         val nick = nickname.value.trim()
         if (addr.isEmpty() || nick.isEmpty()) {
             _error.value = getApplication<Application>().getString(R.string.error_address_nickname_required)
+            return
+        }
+
+        val existingService = TsConnectionService.instance
+        if (existingService?.hasActiveConnection(addr) == true) {
+            _connectionState.value = ConnectionState.CONNECTED
+            _error.value = null
+            onConnected()
             return
         }
 
@@ -138,8 +152,11 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
 
+        // Cancel any previous connection attempt to avoid stale collectors
+        connectJob?.cancel()
+
         // Wait for the service instance to be available
-        viewModelScope.launch {
+        connectJob = viewModelScope.launch {
             var attempts = 0
             while (TsConnectionService.instance == null && attempts < 50) {
                 kotlinx.coroutines.delay(100)
@@ -156,59 +173,38 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
             try {
                 val identity = getOrCreateIdentity()
                 val pw = password.value.trim().takeIf { it.isNotEmpty() }
-                service.connect(addr, identity, nick, pw)
-
-                // Observe the actual connection state from the service.
-                // service.connect() is fire-and-forget (launches its own coroutine),
-                // so we must watch the state flow to detect success or failure.
-                //
-                // BUG FIX: The previous code used `collect { }` which never terminates
-                // and never set `_error` when connection failed — causing "mysterious
-                // connection failures" with no error message shown to the user.
-                //
-                // Now we use a CompletableDeferred to wait for a terminal state
-                // (CONNECTED or DISCONNECTED-after-CONNECTING) and properly
-                // propagate the error to the UI.
-                val connectionResult = CompletableDeferred<Boolean>()
-                var previousState = ConnectionState.DISCONNECTED
-
-                val collectorJob = service.tsClient.state.onEach { state ->
-                    _connectionState.value = state
-                    when {
-                        state == ConnectionState.CONNECTED -> {
-                            connectionResult.complete(true)
-                        }
-                        state == ConnectionState.DISCONNECTED &&
-                            previousState == ConnectionState.CONNECTING -> {
-                            // Connection was attempting and then dropped → failure
-                            connectionResult.complete(false)
-                        }
-                    }
-                    previousState = state
-                }.launchIn(viewModelScope)
-
-                try {
-                    val success = withTimeoutOrNull(30_000) { connectionResult.await() }
-                    collectorJob.cancel()
-                    if (success == true) {
-                        onConnected()
-                    } else if (success == null) {
-                        // Timeout
-                        _connectionState.value = ConnectionState.DISCONNECTED
-                        _error.value = getApplication<Application>()
-                            .getString(R.string.connection_timeout)
-                    } else {
-                        _error.value = getApplication<Application>()
-                            .getString(R.string.connection_failed)
-                    }
-                } finally {
-                    collectorJob.cancel()
+                var connectionFailure = service.connect(addr, identity, nick, pw)
+                if (connectionFailure?.isTooManyClonesFailure() == true) {
+                    Log.w(TAG, "Too many clones for saved identity; retrying with a temporary identity")
+                    connectionFailure = service.connect(addr, getCloneBypassIdentity(), nick, pw)
                 }
+                }
+
+                if (connectionFailure == null) {
+                    _connectionState.value = ConnectionState.CONNECTED
+                    onConnected()
+                } else {
+                    _connectionState.value = ConnectionState.DISCONNECTED
+                    _error.value = connectionFailure.message
+                        ?: getApplication<Application>().getString(R.string.connection_failed)
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _connectionState.value = ConnectionState.DISCONNECTED
                 _error.value = e.message ?: getApplication<Application>().getString(R.string.connection_failed)
             }
         }
+    }
+
+    fun resumeExistingConnection(onConnected: () -> Unit): Boolean {
+        val service = TsConnectionService.instance ?: return false
+        if (!service.hasActiveConnection()) return false
+
+        _connectionState.value = ConnectionState.CONNECTED
+        _error.value = null
+        onConnected()
+        return true
     }
 
     fun connectBookmark(bookmark: ServerBookmark, onConnected: () -> Unit) {
@@ -228,6 +224,7 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
 
     fun tryAutoReconnect(onConnected: () -> Unit) {
         if (autoReconnectAttempted) return
+        if (resumeExistingConnection(onConnected)) return
         autoReconnectAttempted = true
         viewModelScope.launch {
             val lastAddr = bookmarkStore.lastBookmarkAddress.first()
@@ -307,29 +304,49 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
                     val pw = password.value.trim().takeIf { it.isNotEmpty() }
                     // Resolve SRV record if no port is specified
                     val resolvedAddr = dev.tsdroid.bridge.DnsSrvResolver.resolve(addr)
-                    val client = Client(resolvedAddr, identity, nick, pw, null)
-                    try {
-                        client.waitConnected()
-                        // Pump events until channels are available (or timeout)
-                        val deadline = System.currentTimeMillis() + 5000
-                        while (System.currentTimeMillis() < deadline) {
-                            client.processEvents()
-                            val raw = client.channels
-                            if (raw != null && raw.isNotEmpty()) break
-                            Thread.sleep(20)
+                    var lastFailure: Throwable? = null
+
+                    for (attempt in 0 until MAX_NICKNAME_COLLISION_ATTEMPTS) {
+                        val candidateNickname = dev.tsdroid.bridge.nicknameWithCollisionSuffix(nick, attempt)
+                        var client: Client? = null
+                        try {
+                            try {
+                                identity.setNickname(candidateNickname)
+                            } catch (e: Throwable) {
+                                if (e is CancellationException) throw e
+                                Log.w(TAG, "Failed to update identity nickname before connect", e)
+                            }
+                            client = Client(resolvedAddr, identity, candidateNickname, pw, null)
+                            client.waitConnected()
+                            val users = client.users
+                            if (users != null && channels != null) break
+                            if (!dev.tsdroid.bridge.hasNicknameCollision(users, client.clientId, candidateNickname)) {
+                                break
+                            }
+                            Log.w(TAG, "Nickname collision on attempt $attempt, retrying")
+                        } catch (e: Throwable) {
+                            if (e is CancellationException) throw e
+                            lastFailure = e
+                            if (!dev.tsdroid.bridge.isNicknameCollisionFailure(e)) throw e
+                            Log.w(TAG, "Nickname collision failure on attempt $attempt", e)
+                        } finally {
+                            if (client != null) {
+                                if (dev.tsdroid.bridge.hasNicknameCollision(
+                                        client.users, client.clientId, candidateNickname)) {
+                                    dev.tsdroid.bridge.destroyClient(client, "nickname collision in channel list")
+                                } else {
+                                    dev.tsdroid.bridge.closeClient(client, "channel list attempt")
+                                }
+                            }
                         }
-                        val ch = client.channels?.filterNotNull() ?: emptyList()
-                        // Disconnect + flush
-                        client.disconnect()
-                        val flushEnd = System.currentTimeMillis() + 500
-                        while (System.currentTimeMillis() < flushEnd) {
-                            client.processEvents()
-                            Thread.sleep(20)
-                        }
-                        ch
-                    } finally {
-                        client.close()
                     }
+                        }
+                    }
+
+                    throw Exception(
+                        "Browse failed after trying unique nicknames",
+                        lastFailure,
+                    )
                 }
                 browsedChannels.value = channels
                 showChannelPicker.value = true
@@ -354,6 +371,27 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
         _error.value = null
     }
 
+    private fun disconnectAndClose(client: Client) {
+        try {
+            client.disconnect()
+            val flushEnd = System.currentTimeMillis() + 500
+            while (System.currentTimeMillis() < flushEnd) {
+                client.processEvents()
+                Thread.sleep(20)
+            }
+        } catch (_: Throwable) {
+        } finally {
+            closeQuietly(client)
+        }
+    }
+
+    private fun closeQuietly(client: Client) {
+        try {
+            client.close()
+        } catch (_: Throwable) {
+        }
+    }
+
     private fun getOrCreateIdentity(): Identity {
         val context = getApplication<Application>()
         val identityFile = File(context.filesDir, "identity.ini")
@@ -364,6 +402,24 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
             identity.save(identityFile.absolutePath)
             identity
         }
+    }
+
+    private fun getCloneBypassIdentity(): Identity {
+        return cloneBypassIdentity ?: Identity().also {
+            cloneBypassIdentity = it
+        }
+    }
+
+    private fun Throwable.isTooManyClonesFailure(): Boolean {
+        var current: Throwable? = this
+        while (current != null) {
+            val message = current.message?.lowercase().orEmpty()
+            if ("toomanyclones" in message || "too many clones" in message) {
+                return true
+            }
+            current = current.cause
+        }
+        return false
     }
 
     fun showFloatingWindow() {

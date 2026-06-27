@@ -29,7 +29,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import dev.tsdroid.bridge.DnsSrvResolver
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
@@ -114,10 +113,9 @@ class TsClient {
                 
                 delay(if (hadExistingClient) RECONNECT_AFTER_DISCONNECT_DELAY_MS else INITIAL_CONNECT_SETTLE_MS)
                 
-                serverAddress = DnsSrvResolver.resolve(address)
+                serverAddress = address
                 _state.value = ConnectionState.CONNECTING
 
-                val resolvedAddress = serverAddress
                 var lastFailure: Throwable? = null
                 for (attempt in 0 until MAX_NICKNAME_COLLISION_ATTEMPTS) {
                     val candidateNickname = nicknameWithCollisionSuffix(nickname, attempt)
@@ -131,7 +129,7 @@ class TsClient {
                             if (e is CancellationException) throw e
                             Log.w(TAG, "Failed to update identity nickname before connect", e)
                         }
-                        val c = Client(resolvedAddress, identity, candidateNickname, password, channel)
+                        val c = Client(address, identity, candidateNickname, password, channel)
                         pendingClient = c
                         c.waitConnected()
                         pendingClientConnected = true
@@ -297,7 +295,7 @@ class TsClient {
             "file_transfer_failed" -> {
                 val path = event.data["path"] as? String ?: return
                 val error = event.data["error"] as? String ?: "unknown"
-                Log.w(TAG, "File transfer failed: $path 鈥?$error")
+                Log.w(TAG, "File transfer failed: $path — $error")
                 downloadCallbacks.remove(path)?.completeExceptionally(
                     Exception("File transfer failed: $error")
                 )

@@ -38,6 +38,24 @@
     <string name="unmute_mic">Unmute mic</string>
     <string name="tab_channel">Channel</string>
     <string name="tab_private">PM</string>
+    <string name="tab_home">Home</string>
+    <string name="tab_settings">Settings</string>
+    <string name="no_connection">No connections</string>
+    <string name="wallpaper_cache_size">Wallpaper cache: %1$s MB (%2$d images)</string>
+    <string name="wallpaper_max_cache">Max cache: %1$d MB</string>
+    <string name="wallpaper_view_cache">View wallpaper cache</string>
+    <string name="wallpaper_cache_images">images</string>
+    <string name="wallpaper_clear_cache">Clear wallpaper cache</string>
+    <string name="wallpaper_clear_cache_confirm">Are you sure you want to clear all wallpaper cache? This cannot be undone.</string>
+    <string name="wallpaper_cache_empty">No cached wallpapers</string>
+    <string name="confirm">Confirm</string>
+    <string name="update_check">Check for updates</string>
+    <string name="update_found">New version available</string>
+    <string name="update_already_latest">Already up to date</string>
+    <string name="update_available">New version %1$s available</string>
+    <string name="update_download">Update now</string>
+    <string name="update_later">Later</string>
+    <string name="update_no_changelog">No changelog available</string>
     <string name="close">Close</string>
     <string name="filter_all">All</string>
     <string name="message_channel_placeholder">Channel message\u2026</string>
@@ -87,4 +105,9 @@
     <string name="about_repo_link">🔗 Click to visit yuaxi\'s open-source GitHub repository</string>
     <string name="about_warning_title">⚠️ Anti-Fraud (Solemn Disclaimer)</string>
     <string name="about_warning_desc">This program is a purely public-welfare, non-profit product for open-source technical exchange. It is completely FREE and completely OPEN-SOURCE! Any form of commercial peddling, packaging buyout, or bundled key-code charging is strictly prohibited. If you obtained this software through paid channels (such as second-hand bots, trading platforms, paid downloading services, etc.), you have been scammed! Please immediately initiate a refund claim for infringement on the platform, and head to the official open-source repository to report the black-market scalpers with your real name!</string>
+    <string name="anime_background">I love anime</string>
+    <string name="noise_suppression">Microphone noise suppression</string>
+    <string name="about_contributors_title">Contributors</string>
+    <string name="about_contributions_count">%1$d contributions</string>
+    <string name="contributors_load_error">Failed to load</string>
 </resources>

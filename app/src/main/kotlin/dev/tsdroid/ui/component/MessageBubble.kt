@@ -28,7 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -125,9 +125,9 @@ fun MessageBubble(
             ),
         colors = CardDefaults.cardColors(
             containerColor = if (isMe)
-                MaterialTheme.colorScheme.primaryContainer
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
             else
-                MaterialTheme.colorScheme.surfaceVariant,
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
         ),
     ) {
         Column(
@@ -202,7 +202,7 @@ private fun FileAttachmentCard(
 ) {
     val context = LocalContext.current
     var downloadStateFlow by remember { mutableStateOf<StateFlow<DownloadState>?>(null) }
-    val downloadState = downloadStateFlow?.collectAsState()?.value ?: DownloadState.Idle
+    val downloadState = downloadStateFlow?.collectAsStateWithLifecycle()?.value ?: DownloadState.Idle
 
     // Auto-load images (served from disk cache if available)
     LaunchedEffect(attachment, autoLoadImages) {

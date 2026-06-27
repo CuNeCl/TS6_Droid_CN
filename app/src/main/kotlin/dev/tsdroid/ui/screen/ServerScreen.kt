@@ -27,6 +27,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -50,6 +52,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -59,10 +62,11 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -74,13 +78,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.tsdroid.han.R
 import dev.tslib.ConnectionState
 import dev.tslib.User
+import dev.tsdroid.ui.component.AnimeBackground
 import dev.tsdroid.ui.component.ChannelTree
 import dev.tsdroid.ui.component.ChatView
 import dev.tsdroid.ui.component.FileManagerDialog
@@ -99,44 +106,47 @@ fun ServerScreen(
     onNavigateToAbout: () -> Unit,
     viewModel: ServerViewModel = viewModel(),
 ) {
-    val channels by viewModel.channels.collectAsState()
-    val users by viewModel.users.collectAsState()
-    val channelIcons by viewModel.channelIcons.collectAsState()
-    val userAvatars by viewModel.avatars.collectAsState()
-    val serverInfo by viewModel.serverInfo.collectAsState()
-    val channelMessages by viewModel.channelMessages.collectAsState()
-    val privateMessages by viewModel.privateMessages.collectAsState()
-    val isPttMode by viewModel.isPttMode.collectAsState()
-    val isOutputMuted by viewModel.isOutputMuted.collectAsState()
-    val connectionState by viewModel.connectionState.collectAsState()
-    val unreadChannel by viewModel.unreadChannel.collectAsState()
-    val unreadPrivate by viewModel.unreadPrivate.collectAsState()
-    val audioGain by viewModel.audioGain.collectAsState()
-    val showLinkThumbnails by viewModel.showLinkThumbnails.collectAsState()
-    val autoLoadImages by viewModel.autoLoadImages.collectAsState()
-    val enableFloatingWindow by viewModel.enableFloatingWindow.collectAsState()
-    val mutedUserIds by viewModel.mutedUserIds.collectAsState()
-    val fileManagerOpen by viewModel.fileManagerOpen.collectAsState()
-    val fileList by viewModel.fileList.collectAsState()
-    val currentFilePath by viewModel.currentFilePath.collectAsState()
-    val fileManagerLoading by viewModel.fileManagerLoading.collectAsState()
-    val channelPermissions by viewModel.currentChannelPermissions.collectAsState()
+    val channels by viewModel.channels.collectAsStateWithLifecycle()
+    val users by viewModel.users.collectAsStateWithLifecycle()
+    val channelIcons by viewModel.channelIcons.collectAsStateWithLifecycle()
+    val userAvatars by viewModel.avatars.collectAsStateWithLifecycle()
+    val serverInfo by viewModel.serverInfo.collectAsStateWithLifecycle()
+    val channelMessages by viewModel.channelMessages.collectAsStateWithLifecycle()
+    val privateMessages by viewModel.privateMessages.collectAsStateWithLifecycle()
+    val isPttMode by viewModel.isPttMode.collectAsStateWithLifecycle()
+    val isOutputMuted by viewModel.isOutputMuted.collectAsStateWithLifecycle()
+    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val unreadChannel by viewModel.unreadChannel.collectAsStateWithLifecycle()
+    val unreadPrivate by viewModel.unreadPrivate.collectAsStateWithLifecycle()
+    val audioGain by viewModel.audioGain.collectAsStateWithLifecycle()
+    val showLinkThumbnails by viewModel.showLinkThumbnails.collectAsStateWithLifecycle()
+    val autoLoadImages by viewModel.autoLoadImages.collectAsStateWithLifecycle()
+    val enableFloatingWindow by viewModel.enableFloatingWindow.collectAsStateWithLifecycle()
+    val animeBackground by viewModel.animeBackground.collectAsStateWithLifecycle()
+    val noiseSuppression by viewModel.noiseSuppression.collectAsStateWithLifecycle()
+    val mutedUserIds by viewModel.mutedUserIds.collectAsStateWithLifecycle()
+    val fileManagerOpen by viewModel.fileManagerOpen.collectAsStateWithLifecycle()
+    val fileList by viewModel.fileList.collectAsStateWithLifecycle()
+    val previewImageBytes by viewModel.previewImageBytes.collectAsStateWithLifecycle()
+    val previewImageName by viewModel.previewImageName.collectAsStateWithLifecycle()
+    val currentFilePath by viewModel.currentFilePath.collectAsStateWithLifecycle()
+    val fileManagerLoading by viewModel.fileManagerLoading.collectAsStateWithLifecycle()
+    val channelPermissions by viewModel.currentChannelPermissions.collectAsStateWithLifecycle()
 
-    var showSettings by remember { mutableStateOf(false) }
     var chatOpen by remember { mutableStateOf(false) }
     var chatEverOpened by remember { mutableStateOf(false) }
     var chatTab by remember { mutableIntStateOf(0) }
     var messageText by remember { mutableStateOf("") }
     var pmTargetId by remember { mutableStateOf<Int?>(null) }
 
-    // Whisper (密聊) state — read directly from WhisperManager
+    // Whisper (瀵嗚亰) state 鈥?read directly from WhisperManager
     val whisperTargetNames = WhisperManager.whisperTargetNames
     val whisperFirstTargetName = whisperTargetNames.firstOrNull()
 
     // Resolve pmTarget User from users list
     val pmTarget = pmTargetId?.let { id -> users.find { it.id == id } }
 
-    // Build PM conversation user list (id → name) from message map + users list
+    // Build PM conversation user list (id 鈫?name) from message map + users list
     val context = LocalContext.current
     val pmConversationUsers = remember(privateMessages, users) {
         privateMessages.keys.map { userId ->
@@ -159,7 +169,7 @@ fun ServerScreen(
         onDispose {}
     }
 
-    // Navigate away on disconnect — one-shot via LaunchedEffect
+    // Navigate away on disconnect 鈥?one-shot via LaunchedEffect
     LaunchedEffect(connectionState) {
         if (connectionState == ConnectionState.DISCONNECTED) {
             onDisconnected()
@@ -182,31 +192,21 @@ fun ServerScreen(
 
     val totalUnread = unreadChannel + totalUnreadPrivate
 
-    if (showSettings) {
-        SettingsDialog(
-            currentGain = audioGain,
-            onGainChange = { viewModel.setAudioGain(it) },
-            showLinkThumbnails = showLinkThumbnails,
-            onShowLinkThumbnailsChange = { viewModel.setShowLinkThumbnails(it) },
-            autoLoadImages = autoLoadImages,
-            onAutoLoadImagesChange = { viewModel.setAutoLoadImages(it) },
-            enableFloatingWindow = enableFloatingWindow,
-            onEnableFloatingWindowChange = { viewModel.setEnableFloatingWindow(it) },
-            onDismiss = { showSettings = false },
-            onNavigateToAbout = onNavigateToAbout
-        )
-    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        AnimeBackground(enabled = animeBackground)
 
-    Scaffold(
+        Scaffold(
+            containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = { Text(serverInfo?.name ?: stringResource(R.string.server)) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
                 actions = {
                     IconButton(onClick = { viewModel.toggleFileManager() }) {
                         Icon(Icons.Default.Folder, contentDescription = stringResource(R.string.file_manager))
-                    }
-                    IconButton(onClick = { showSettings = true }) {
-                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings))
                     }
                     IconButton(onClick = { viewModel.disconnect() }) {
                         Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = stringResource(R.string.disconnect))
@@ -215,8 +215,11 @@ fun ServerScreen(
             )
         },
         bottomBar = {
-            Surface(
-                tonalElevation = 3.dp,
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 Row(
                     modifier = Modifier
@@ -314,7 +317,7 @@ fun ServerScreen(
                         }
                     }
 
-                    // Toggle voice mode (PTT ↔ Voice Activity)
+                    // Toggle voice mode (PTT 鈫?Voice Activity)
                     IconButton(onClick = { viewModel.toggleVoiceMode() }) {
                         Icon(
                             if (isPttMode) Icons.Default.MicOff else Icons.Default.Mic,
@@ -324,12 +327,12 @@ fun ServerScreen(
                         )
                     }
 
-                    // Whisper (密聊) indicator — shows active state, click to stop
+                    // Whisper (瀵嗚亰) indicator 鈥?shows active state, click to stop
                     if (WhisperManager.isWhisperActive && whisperFirstTargetName != null) {
                         IconButton(onClick = { viewModel.toggleWhisper(WhisperManager.whisperTargets.first()) }) {
                             Icon(
                                 Icons.Default.Forum,
-                                contentDescription = "停止密聊",
+                                contentDescription = "鍋滄瀵嗚亰",
                                 tint = Color(0xFF4CAF50),
                             )
                         }
@@ -340,7 +343,7 @@ fun ServerScreen(
                         ) {
                             Icon(
                                 Icons.Default.Forum,
-                                contentDescription = "密聊",
+                                contentDescription = "瀵嗚亰",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
                             )
                         }
@@ -364,7 +367,7 @@ fun ServerScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            // Channel tree — full screen
+            // Channel tree 鈥?full screen
             ChannelTree(
                 channels = channels,
                 users = users,
@@ -384,7 +387,7 @@ fun ServerScreen(
                     .padding(horizontal = 8.dp),
             )
 
-            // File manager — slides up from bottom, fills content area
+            // File manager 鈥?slides up from bottom, fills content area
             val fileManagerProgress by animateFloatAsState(
                 targetValue = if (fileManagerOpen) 0f else 1f,
                 animationSpec = tween(300),
@@ -417,11 +420,14 @@ fun ServerScreen(
                             }
                         },
                         onDismiss = { viewModel.closeFileManager() },
+                        onPreviewImage = { fileName ->
+                            viewModel.previewImageFile(fileName)
+                        },
                     )
                 }
             }
 
-            // Chat panel — slides up from bottom, fills content area
+            // Chat panel 鈥?slides up from bottom, fills content area
             // Once opened, stay composed so re-opening is instant (no recomposition)
             if (chatOpen) chatEverOpened = true
             val chatProgress by animateFloatAsState(
@@ -433,6 +439,7 @@ fun ServerScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .clipToBounds()
                         .graphicsLayer { translationY = size.height * chatProgress },
                 ) {
                     ChatPanel(
@@ -477,11 +484,40 @@ fun ServerScreen(
             }
         }
     }
+
+    // Image preview overlay
+    if (previewImageBytes != null) {
+        Dialog(onDismissRequest = { viewModel.closePreview() }) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+                    .clipToBounds()
+                    .clickable { viewModel.closePreview() },
+                contentAlignment = Alignment.Center,
+            ) {
+                previewImageBytes?.let { bytes ->
+                    val bitmap = remember(bytes) {
+                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    }
+                    if (bitmap != null) {
+                        androidx.compose.foundation.Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = previewImageName,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+            }
+        }
+    }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ChatPanel(
+fun ChatPanel(
     chatTab: Int,
     onTabChange: (Int) -> Unit,
     channelMessages: List<ChatMessage>,
@@ -523,7 +559,7 @@ private fun ChatPanel(
     }
     Surface(
         modifier = Modifier.fillMaxSize(),
-        tonalElevation = 3.dp,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
     ) {
         Column(
             modifier = Modifier
@@ -539,6 +575,7 @@ private fun ChatPanel(
                 TabRow(
                     selectedTabIndex = chatTab,
                     modifier = Modifier.weight(1f),
+                    containerColor = Color.Transparent,
                 ) {
                     Tab(
                         selected = chatTab == 0,
@@ -623,7 +660,7 @@ private fun ChatPanel(
             // Whisper mode indicator
             if (isWhisperActive && whisperTargetName != null) {
                 Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
                 ) {
@@ -639,7 +676,7 @@ private fun ChatPanel(
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = "密聊 ${whisperTargetName}",
+                            text = "瀵嗚亰 ${whisperTargetName}",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
@@ -685,7 +722,7 @@ private fun ChatPanel(
                         Text(
                             when {
                                 isWhisperActive && whisperTargetName != null ->
-                                    "密聊 ${whisperTargetName}..."
+                                    "瀵嗚亰 ${whisperTargetName}..."
                                 chatTab == 0 -> stringResource(R.string.message_channel_placeholder)
                                 else -> stringResource(R.string.message_private_placeholder, pmTarget?.nickname ?: "?")
                             }
@@ -693,6 +730,12 @@ private fun ChatPanel(
                     },
                     singleLine = true,
                     enabled = chatTab == 0 || pmTarget != null || (isWhisperActive && whisperTargetName != null),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    ),
                 )
                 IconButton(
                     onClick = onSend,
@@ -703,101 +746,4 @@ private fun ChatPanel(
             }
         }
     }
-}
-
-@Composable
-private fun SettingsDialog(
-    currentGain: Float,
-    onGainChange: (Float) -> Unit,
-    showLinkThumbnails: Boolean,
-    onShowLinkThumbnailsChange: (Boolean) -> Unit,
-    autoLoadImages: Boolean,
-    onAutoLoadImagesChange: (Boolean) -> Unit,
-    enableFloatingWindow: Boolean,
-    onEnableFloatingWindowChange: (Boolean) -> Unit,
-    onDismiss: () -> Unit,
-    onNavigateToAbout: () -> Unit,
-) {
-    var sliderValue by remember(currentGain) { mutableFloatStateOf(currentGain) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings)) },
-        text = {
-            Column {
-                Text(
-                    text = "${stringResource(R.string.audio_gain)} : ${stringResource(R.string.audio_gain_value, sliderValue)}",
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-                Spacer(Modifier.height(8.dp))
-                Slider(
-                    value = sliderValue,
-                    onValueChange = { sliderValue = it },
-                    onValueChangeFinished = { onGainChange(sliderValue) },
-                    valueRange = 1.0f..8.0f,
-                    steps = 13, // (8-1)/0.5 - 1 = 13 intermediate steps
-                )
-                Spacer(Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.show_link_thumbnails),
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Switch(
-                        checked = showLinkThumbnails,
-                        onCheckedChange = onShowLinkThumbnailsChange,
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.auto_load_images),
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Switch(
-                        checked = autoLoadImages,
-                        onCheckedChange = onAutoLoadImagesChange,
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.enable_floating_window),
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Switch(
-                        checked = enableFloatingWindow,
-                        onCheckedChange = onEnableFloatingWindowChange,
-                    )
-                }
-                Spacer(Modifier.height(16.dp))
-                TextButton(
-                    onClick = {
-                        onDismiss()
-                        onNavigateToAbout()
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(stringResource(R.string.about_software))
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.close))
-            }
-        },
-    )
 }

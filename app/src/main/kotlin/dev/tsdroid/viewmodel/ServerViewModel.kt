@@ -87,6 +87,11 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     // In-memory cache: avoids re-reading from disk + re-decoding for the same image
     private val downloadCache = mutableMapOf<String, StateFlow<DownloadState>>()
 
+    private val _previewImageBytes = MutableStateFlow<ByteArray?>(null)
+    val previewImageBytes: StateFlow<ByteArray?> = _previewImageBytes.asStateFlow()
+    private val _previewImageName = MutableStateFlow<String?>(null)
+    val previewImageName: StateFlow<String?> = _previewImageName.asStateFlow()
+
     private var tsClient: TsClient? = null
     private var audioBridge: AudioBridge? = null
     private var connectionService: TsConnectionService? = null
@@ -156,6 +161,12 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     val enableFloatingWindow: StateFlow<Boolean> = settingsStore.enableFloatingWindow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    val animeBackground: StateFlow<Boolean> = settingsStore.animeBackground
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    val noiseSuppression: StateFlow<Boolean> = settingsStore.noiseSuppression
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     // File manager state
@@ -309,10 +320,16 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             }
             // Start audio capture if not already running
             if (!service.audioBridge.isCapturing.value) {
-                service.audioBridge.startCapture(viewModelScope)
+                service.audioBridge.startCapture(viewModelScope, noiseSuppression.value)
             }
             // Apply persisted audio gain
             service.audioBridge.gainFactor = audioGain.value
+            // Observe audio gain changes and apply live
+            viewModelScope.launch {
+                audioGain.collect { gain ->
+                    service.audioBridge.gainFactor = gain
+                }
+            }
             // Observe audio state for local talking status
             viewModelScope.launch {
                 service.audioBridge.isLocalVoiceActive.collect { _isLocalTalking.value = it }
@@ -626,6 +643,14 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { settingsStore.setEnableFloatingWindow(enabled) }
     }
 
+    fun setAnimeBackground(enabled: Boolean) {
+        viewModelScope.launch { settingsStore.setAnimeBackground(enabled) }
+    }
+
+    fun setNoiseSuppression(enabled: Boolean) {
+        viewModelScope.launch { settingsStore.setNoiseSuppression(enabled) }
+    }
+
     fun toggleVoiceMode() {
         val newPttMode = !_isPttMode.value
         _isPttMode.value = newPttMode
@@ -905,7 +930,6 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                 if (cached == null) {
                     fileCache.put(host, cachePath, bytes)
                 }
-                // Save to Downloads + open the file
                 val dlUri = saveToDownloads(fileName, bytes)
                 if (dlUri != null) {
                     withContext(Dispatchers.Main) {
@@ -914,6 +938,32 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
         }
+    }
+
+    fun previewImageFile(fileName: String) {
+        val client = tsClient ?: return
+        val channelId = currentChannelId()
+        val currentPath = _currentFilePath.value
+        val fullName = currentPath.trimStart('/') + fileName
+        val host = serverAddress?.substringBefore(':') ?: "unknown"
+        val cachePath = fullName.trimStart('/')
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val cached = fileCache.get(host, cachePath)
+            val bytes = cached ?: client.downloadFile(channelId, "/$fullName")
+            if (bytes != null) {
+                if (cached == null) {
+                    fileCache.put(host, cachePath, bytes)
+                }
+                _previewImageBytes.value = bytes
+                _previewImageName.value = fileName
+            }
+        }
+    }
+
+    fun closePreview() {
+        _previewImageBytes.value = null
+        _previewImageName.value = null
     }
 
     private fun openFileUri(uri: android.net.Uri, fileName: String) {
